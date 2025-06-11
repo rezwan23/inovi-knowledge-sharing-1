@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:quickbooks-online-connector-mule-4="http://www.mulesoft.org/schema/mule/quickbooks-online-connector-mule-4"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sockets="http://www.mulesoft.org/schema/mule/sockets" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sockets http://www.mulesoft.org/schema/mule/sockets/current/mule-sockets.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/quickbooks-online-connector-mule-4 http://www.mulesoft.org/schema/mule/quickbooks-online-connector-mule-4/current/mule-quickbooks-online-connector-mule-4.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="ef2ddec8-7eff-421d-bb45-02c69ea057cd" basePath="/api" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<quickbooks-online-connector-mule-4:config name="Quickbooks_Online_Connector_Mule4Connector_Config" doc:name="Quickbooks Online Connector Mule4Connector Config" doc:id="ca68a978-070a-41f0-9e60-b3613a47315f" >
+		<quickbooks-online-connector-mule-4:auth-connection >
+			<quickbooks-online-connector-mule-4:oauth-authorization-code consumerKey="BBLTJCJfuzpIO2BEDGqmoTPRMQCZ7TTJUmDaZrAtzjUV6TwUjc" consumerSecret="ipvBthettyHYVJYSmEZPItcPnsdgCiDuYMmzp4EQ" scopes="com.intuit.quickbooks.accounting" />
+			<quickbooks-online-connector-mule-4:oauth-callback-config listenerConfig="HTTP_Listener_config" callbackPath="/callback" authorizePath="/authorize" />
+		</quickbooks-online-connector-mule-4:auth-connection>
+	</quickbooks-online-connector-mule-4:config>
+	<http:request-config name="token_req" doc:name="HTTP Request configuration" doc:id="d71ee683-9116-4fb0-857d-4b606b80b250">
+		<http:request-connection protocol="HTTPS" />
+	</http:request-config>
+	<configuration-properties doc:name="Configuration properties" doc:id="7b37e02e-1c97-4f23-875b-45a04e3b087c" file="${env}.yaml" />
+	<global-property doc:name="Global Property" doc:id="ae47fd75-c105-438c-97fa-dffe9e3861e5" name="env" value="dev" />
+	<flow name="GetAllInvoice" doc:id="6fc9db03-963f-495e-a7bd-ff22a156eff3" >
+		<http:listener doc:name="Listener" doc:id="1e568a89-8ded-4db2-a96b-1a73cd0437de" config-ref="HTTP_Listener_config" path="/query">
+			<http:error-response >
+				<http:body ><![CDATA[#[payload]]]></http:body>
+			</http:error-response>
+		</http:listener>
+		<set-variable value="#[attributes.queryParams.query]" doc:name="Set Variable" doc:id="8ae0ac54-bff5-4483-8544-5927fc065202" variableName="query"/>
+		<logger level="INFO" doc:name="Logger" doc:id="6f23c5d7-a572-4ac5-bdb7-59a1e7c9ed2e" />
+		<os:retrieve doc:name="Retrieve" doc:id="c3d6d6d5-daa6-48fa-96d6-14d453b654ba" key="access_token"/>
+		<set-variable value="#[payload]" doc:name="Set Variable" doc:id="abb80a77-8347-4d4f-97e6-bf184286df41" variableName="access_token"/>
+		<http:request method="GET" doc:name="Request" doc:id="b2e18938-b378-45e9-81bc-5b9bbc930a9f" url="https://sandbox-quickbooks.api.intuit.com/v3/company/${data.company_id}/query">
+					<http:headers><![CDATA[#[output application/java
+---
+{
+	Authorization: "Bearer " ++ vars.access_token,
+	Accept: "application/json"
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[output application/java
+---
+{
+	query: vars.query
+}]]]></http:query-params>
+				</http:request>
+		<ee:transform doc:name="Transform Message" doc:id="ed73d6a5-b9b6-4ae3-9c62-66b5cc029fff">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="001011e8-e583-4cf1-96df-518a97568a8c" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="ae56b3a1-41a4-45db-8fe4-d43fb2402631" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	error : error.description
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="CallBack" doc:id="b8211d02-25e5-447d-bbc6-bb332d93fcef">
+		<http:listener doc:name="CallBack" doc:id="37939b34-3b09-4646-9965-69a5b114b163" config-ref="HTTP_Listener_config" path="/callback">
+			<http:response statusCode="#[vars.statusCode]" reasonPhrase="#[vars.reasonPhrase]" />
+			<http:error-response statusCode="#[vars.statusCode]" reasonPhrase="#[vars.reasonPhrase]">
+			</http:error-response>
+		</http:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="20f397c0-aa77-47b6-abc9-dee587fd656c" message="#[payload]" />
+		<set-variable value="#[attributes.queryParams.code]" doc:name="setCode" doc:id="d81b99f2-4383-48af-8195-1633d2866454" variableName="code" />
+		<ee:transform doc:name="Transform Message" doc:id="1b25f8c1-c637-4b29-ae75-f73790b35b13">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+import * from dw::core::Binaries
+output application/json
+---
+{
+	Authorization : "Basic " ++ toBase64('BBLTJCJfuzpIO2BEDGqmoTPRMQCZ7TTJUmDaZrAtzjUV6TwUjc:ipvBthettyHYVJYSmEZPItcPnsdgCiDuYMmzp4EQ')
+}
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<http:request method="POST" doc:name="token_request" doc:id="8ff2c3e5-3011-4d0c-a1fd-a9c20ea459f0" config-ref="token_req" url="https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer" sendCorrelationId="NEVER">
+			<http:body><![CDATA[#[%dw 2.0
+output application/x-www-form-urlencoded
+---
+{
+	grant_type : "authorization_code",
+	code : vars.code,
+	redirect_uri : "http://localhost:8081/api/callback"
+}]]]></http:body>
+			<http:headers><![CDATA[#[output application/java
+---
+{
+	"Authorization" : payload.Authorization,
+	"Accept": "application/json",
+	"Content-Type": "application/x-www-form-urlencoded",
+	"Host": "oauth.platform.intuit.com"
+}]]]></http:headers>
+		</http:request>
+		<choice doc:name="Choice" doc:id="bc3f3a4a-dccf-4fd9-9267-374b81d6121e">
+			<when expression="#[attributes.statusCode == 200]">
+				<scatter-gather doc:name="Scatter-Gather" doc:id="c5ff7d70-d5e3-4ef6-97d8-6da6dcf0a073">
+					<route>
+						<os:store doc:name="Store" doc:id="6a87f0a0-46ef-4985-a5b4-9d310b0f3c63" key="access_token">
+					<os:value><![CDATA[#[payload.access_token]]]></os:value>
+				</os:store>
+					</route>
+					<route >
+						<ee:transform doc:name="Transform Message" doc:id="59cb0aa4-cc5e-432c-927f-686f5ca3059e" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+{
+}]]></ee:set-payload>
+							</ee:message>
+							<ee:variables >
+								<ee:set-variable variableName="statusCode" ><![CDATA[200]]></ee:set-variable>
+								<ee:set-variable variableName="reasonPhrase" ><![CDATA["OK"]]></ee:set-variable>
+							</ee:variables>
+						</ee:transform>
+					</route>
+				</scatter-gather>
+				<ee:transform doc:name="Transform Message" doc:id="de4f2217-2207-4037-bf43-7882d1a0d988">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message: "Success"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<scatter-gather doc:name="Scatter-Gather" doc:id="f17f60fb-7cd7-4eeb-85d6-f70d95245453">
+					<route>
+						<set-variable value="500" doc:name="Set Variable" doc:id="c815880d-f806-4506-84a7-8ea266f5cc24" variableName="statusCode" />
+					</route>
+					<route>
+						<set-variable value="Error" doc:name="Set Variable" doc:id="4dd045cc-3588-44ae-91fa-a42fc07e0b9f" variableName="reasonPhrase" />
+					</route>
+				</scatter-gather>
+				<ee:transform doc:name="Transform Message" doc:id="ed66a7aa-2d29-4264-910a-c3d6c3e23e49">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message: "error"
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+	<flow name="RemoveToken" doc:id="c50d8463-605d-410f-a0a3-eec92b2c60de" >
+		<http:listener doc:name="Listener" doc:id="9a45b54a-abf0-4412-80fc-1c64c285490e" config-ref="HTTP_Listener_config" path="/remove-token"/>
+		<os:store doc:name="Store" doc:id="2a6a8b2a-2183-4f5e-a264-c1862846c4fc" key="access_token">
+			<os:value ><![CDATA[#[""]]]></os:value>
+		</os:store>
+	</flow>
+</mule>
